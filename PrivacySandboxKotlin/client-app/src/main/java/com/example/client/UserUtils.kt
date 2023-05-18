@@ -20,8 +20,7 @@ import android.util.Log
 import android.view.Display
 import android.view.WindowManager
 import android.webkit.WebSettings
-import com.example.client.AdvertisingInfo.getAdvertisingProfile
-import kotlinx.coroutines.runBlocking
+import com.example.client.AdvertisingInfo.initAdvertisingProfile
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
@@ -134,22 +133,20 @@ object UserUtils {
         return Build.VERSION.RELEASE
     }
 
-    private var advertisingProfile: AdvertisingInfo.AdvertisingProfile? = null
-
     fun initAdProfile(context: Context) {
-        advertisingProfile = runBlocking { getAdvertisingProfile(context) }
+        initAdvertisingProfile(context)
     }
     @JvmStatic
-    val deviceAdvertisingId: String?
-        get() = advertisingProfile?.id
+    val deviceAdvertisingId: String
+        get() = AdvertisingInfo.adProfile.id
 
     @JvmStatic
-    val isDeviceAdvertisingIdWasGenerated: Boolean?
-        get() = advertisingProfile?.isAdvertisingIdWasGenerated
+    val isDeviceAdvertisingIdWasGenerated: Boolean
+        get() = AdvertisingInfo.adProfile.isAdvertisingIdWasGenerated
 
     @JvmStatic
-    val isLimitAdTrackingEnabled: Boolean?
-        get() = advertisingProfile?.isLimitAdTrackingEnabled
+    val isLimitAdTrackingEnabled: Boolean
+        get() = AdvertisingInfo.adProfile.isLimitAdTrackingEnabled
 
     @SuppressLint("MissingPermission")
     fun getLocation(context: Context): Location? {

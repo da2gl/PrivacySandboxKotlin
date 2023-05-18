@@ -15,6 +15,7 @@
  */
 package com.example.client
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.sdksandbox.LoadSdkException
 import android.app.sdksandbox.RequestSurfacePackageException
@@ -101,6 +102,13 @@ class MainActivity : AppCompatActivity() {
         registerRequestWebViewButton()
         registerCreateFileButton()
         initAdProfile(this)
+        requestPermissions(
+            arrayOf<String>(
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ),
+            REQ_CODE_PERMISSIONS
+        )
     }
 
     /**
@@ -258,7 +266,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "SandboxClient"
-
+        private const val REQ_CODE_PERMISSIONS = 1
         /**
          * Name of the SDK to be loaded.
          */

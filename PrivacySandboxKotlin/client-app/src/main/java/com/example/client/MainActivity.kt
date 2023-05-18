@@ -16,7 +16,6 @@
 package com.example.client
 
 import android.annotation.SuppressLint
-import android.app.AlertDialog
 import android.app.sdksandbox.LoadSdkException
 import android.app.sdksandbox.RequestSurfacePackageException
 import android.app.sdksandbox.SandboxedSdk
@@ -27,18 +26,25 @@ import android.app.sdksandbox.SdkSandboxManager.EXTRA_HOST_TOKEN
 import android.app.sdksandbox.SdkSandboxManager.EXTRA_SURFACE_PACKAGE
 import android.app.sdksandbox.SdkSandboxManager.EXTRA_WIDTH_IN_PIXELS
 import android.app.sdksandbox.SdkSandboxManager.SdkSandboxProcessDeathCallback
-import android.content.DialogInterface
 import android.os.*
-import android.text.InputType
 import android.util.Log
 import android.view.SurfaceControlViewHost.SurfacePackage
 import android.view.SurfaceView
 import android.view.View
 import android.widget.Button
-import android.widget.EditText
 import android.widget.Toast
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import com.example.client.UserUtils.getBrandName
+import com.example.client.UserUtils.getHttpAgentString
+import com.example.client.UserUtils.getModelName
+import com.example.client.UserUtils.getScreenDensity
+import com.example.client.UserUtils.getScreenHeightInDp
+import com.example.client.UserUtils.getScreenSize
+import com.example.client.UserUtils.getScreenWidthInDp
+import com.example.client.UserUtils.initAdProfile
+import com.example.client.UserUtils.isDeviceAdvertisingIdWasGenerated
+import com.example.client.UserUtils.isLimitAdTrackingEnabled
+import com.example.client.UserUtils.isTablet
 import com.example.exampleaidllibrary.ISdkApi
 import com.example.privacysandbox.client.R
 
@@ -80,7 +86,6 @@ class MainActivity : AppCompatActivity() {
     private var mSdkLoaded = false
 
 
-    @RequiresApi(api = 33)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -95,12 +100,12 @@ class MainActivity : AppCompatActivity() {
         registerLoadCodeProviderButton()
         registerRequestWebViewButton()
         registerCreateFileButton()
+        initAdProfile(this)
     }
 
     /**
      * Register the callback action after once mLoadSdkButton got clicked.
      */
-    @RequiresApi(api = 33)
     private fun registerLoadCodeProviderButton() {
         mLoadSdkButton.setOnClickListener { _: View? ->
             // Register for sandbox death event.
@@ -108,6 +113,7 @@ class MainActivity : AppCompatActivity() {
                 { obj: Runnable -> obj.run() }, SdkSandboxProcessDeathCallbackImpl())
             log("Attempting to load sandbox SDK")
             val callback = LoadSdkCallbackImpl()
+            printData()
             mSdkSandboxManager.loadSdk(
                 SDK_NAME, Bundle(), { obj: Runnable -> obj.run() }, callback
             )
@@ -117,7 +123,6 @@ class MainActivity : AppCompatActivity() {
     /**
      * Register the callback action after once mRequestWebViewButton got clicked.
      */
-    @RequiresApi(api = 33)
     private fun registerRequestWebViewButton() {
         mRequestWebViewButton.setOnClickListener {
             if (!mSdkLoaded) {
@@ -127,10 +132,10 @@ class MainActivity : AppCompatActivity() {
             log("Getting SurfacePackage.")
             Handler(Looper.getMainLooper()).post {
                 val params = Bundle()
-                params.putInt(EXTRA_WIDTH_IN_PIXELS, mClientView.getWidth())
-                params.putInt(EXTRA_HEIGHT_IN_PIXELS, mClientView.getHeight())
-                params.putInt(EXTRA_DISPLAY_ID, getDisplay()?.getDisplayId()!!)
-                params.putBinder(EXTRA_HOST_TOKEN, mClientView.getHostToken())
+                params.putInt(EXTRA_WIDTH_IN_PIXELS, mClientView.width)
+                params.putInt(EXTRA_HEIGHT_IN_PIXELS, mClientView.height)
+                params.putInt(EXTRA_DISPLAY_ID, display?.displayId!!)
+                params.putBinder(EXTRA_HOST_TOKEN, mClientView.hostToken)
                 mSdkSandboxManager.requestSurfacePackage(
                     SDK_NAME, params, { obj: Runnable -> obj.run() }, RequestSurfacePackageCallbackImpl())
             }
@@ -140,7 +145,6 @@ class MainActivity : AppCompatActivity() {
     /**
      * Register the callback action after once mCreateFileButton got clicked.
      */
-    @RequiresApi(api = 33)
     private fun registerCreateFileButton() {
         mCreateFileButton.setOnClickListener { _ ->
             if (!mSdkLoaded) {
@@ -148,52 +152,17 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             log("Creating file inside sandbox.")
-
-            // Show dialog to collect the size of storage
-            val builder: AlertDialog.Builder = AlertDialog.Builder(this)
-            builder.setTitle("Set size in MB")
-            val input = EditText(this)
-            input.setInputType(InputType.TYPE_CLASS_NUMBER)
-            builder.setView(input)
-            builder.setPositiveButton("Create", object : DialogInterface.OnClickListener {
-
-                override fun onClick(dialog: DialogInterface?, which: Int) {
-                    var sizeInMb = -1
-                    try {
-                        sizeInMb = Integer.parseInt(input.getText().toString())
-                    } catch (ignore: Exception) {
-                    }
-                    if (sizeInMb <= 0) {
-                        makeToast("Please provide positive integer value")
-                        return
-                    }
-
-                    val binder: IBinder? = mSandboxedSdk.getInterface()
-                    val sdkApi = ISdkApi.Stub.asInterface(binder)
-
-                    try {
-                        val response: String = sdkApi.createFile(sizeInMb)
-                        makeToast(response)
-                    } catch (e: RemoteException) {
-                        throw RuntimeException(e)
-                    }
-                }
-            })
-            builder.setNegativeButton("Cancel", object : DialogInterface.OnClickListener {
-
-                override fun onClick(dialog: DialogInterface, which: Int) {
-                    dialog.cancel()
-                }
-            })
-            builder.show()
+            val binder: IBinder? = mSandboxedSdk.getInterface()
+            val sdkApi = ISdkApi.Stub.asInterface(binder)
+            sdkApi.getData()
+            makeToast("Done")
         }
     }
 
     /**
      * A callback for tracking events regarding loading an SDK.
      */
-    @RequiresApi(api = 33)
-    private inner class LoadSdkCallbackImpl() : OutcomeReceiver<SandboxedSdk, LoadSdkException> {
+    private inner class LoadSdkCallbackImpl : OutcomeReceiver<SandboxedSdk, LoadSdkException> {
         /**
          * This notifies client application that the requested SDK is successfully loaded.
          *
@@ -215,7 +184,7 @@ class MainActivity : AppCompatActivity() {
          */
         @SuppressLint("Override")
         override fun onError(error: LoadSdkException) {
-            log("onLoadSdkFailure(" + error.getLoadSdkErrorCode().toString() + "): " + error.message)
+            log("onLoadSdkFailure(" + error.loadSdkErrorCode.toString() + "): " + error.message)
             makeToast("Load SDK Failed! " + error.message)
         }
     }
@@ -223,8 +192,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * A callback for tracking Sdk Sandbox process death event.
      */
-    @RequiresApi(api = 33)
-    private inner class SdkSandboxProcessDeathCallbackImpl() : SdkSandboxProcessDeathCallback {
+    private inner class SdkSandboxProcessDeathCallbackImpl : SdkSandboxProcessDeathCallback {
         /**
          * Notifies the client application that the SDK sandbox has died. The sandbox could die for
          * various reasons, for example, due to memory pressure on the system, or a crash in the
@@ -243,8 +211,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * A callback for tracking a request for a surface package from an SDK.
      */
-    @RequiresApi(api = 33)
-    private inner class RequestSurfacePackageCallbackImpl() :
+    private inner class RequestSurfacePackageCallbackImpl :
         OutcomeReceiver<Bundle?, RequestSurfacePackageException?> {
         /**
          * This notifies client application that [SurfacePackage]
@@ -262,7 +229,7 @@ class MainActivity : AppCompatActivity() {
                 val surfacePackage: SurfacePackage? = response.getParcelable(
                     EXTRA_SURFACE_PACKAGE, SurfacePackage::class.java)
                 mClientView.setChildSurfacePackage(surfacePackage!!)
-                mClientView.setVisibility(View.VISIBLE)
+                mClientView.visibility = View.VISIBLE
             }
         }
 
@@ -274,7 +241,7 @@ class MainActivity : AppCompatActivity() {
          */
         @SuppressLint("Override")
         override fun onError(error: RequestSurfacePackageException) {
-            log("onSurfacePackageError" + error.getRequestSurfacePackageErrorCode()
+            log("onSurfacePackageError" + error.requestSurfacePackageErrorCode
                 .toString() + "): "
                   + error.message)
             makeToast("Surface Package Failed! " + error.message)
@@ -296,5 +263,125 @@ class MainActivity : AppCompatActivity() {
          * Name of the SDK to be loaded.
          */
         private const val SDK_NAME = "com.example.privacysandbox.provider"
+    }
+
+    private fun printData() {
+        Log.d(TAG,"________________________User App Side_______________________")
+        getDeviceType()
+        getUserAgent()
+        getAdvertisingIdfa()
+        getIfv()
+        getLimitAdTracking()
+        getLocation()
+        getUtcOffset()
+        getConnectionTime()
+        getMccmnc()
+        getCarrier()
+        getDisplayWidth()
+        getDisplayHeight()
+        getDisplayPxRatio()
+        getDisplayPpi()
+        getOs()
+        getOsVersion()
+        getDeviceHardwareVersion()
+        getDeviceMake()
+        getDeviceModel()
+        getDeviceLanguage()
+        getAppBundle()
+        getAppVersion()
+        getAppName()
+    }
+
+    private fun getDeviceType() {
+        val device = if (isTablet(this)) "Tablet" else "Phone"
+        Log.d(TAG,"getDeviceType: $device")
+    }
+    private fun getUserAgent() {
+        val userAgent = getHttpAgentString(this)
+        Log.d(TAG,"getUserAgent: $userAgent")
+    }
+    private fun getAdvertisingIdfa() {
+        val idfa = UserUtils.deviceAdvertisingId
+        Log.d(TAG,"getAdvertisingIdfa: $idfa")
+    }
+    private fun getIfv() {
+        val idfv = isDeviceAdvertisingIdWasGenerated
+        Log.d(TAG,"getIfv: $idfv")
+    }
+    private fun getLimitAdTracking() {
+       val limitAdTracking = isLimitAdTrackingEnabled
+        Log.d(TAG,"getLimitAdTracking: $limitAdTracking")
+    }
+    private fun getLocation() {
+        val location = UserUtils.getLocation(this)
+        Log.d(TAG,"getLocation: lat: ${location?.latitude} lon: ${location?.longitude}")
+    }
+    private fun getUtcOffset() {
+       val utcOffset = UserUtils.getUtcOffset()
+        Log.d(TAG,"getUtcOffset: $utcOffset")
+    }
+    private fun getConnectionTime() {
+       val connectionType = UserUtils.getConnectionData(this)
+        Log.d(TAG,"getConnectionTime: ${connectionType.type}")
+    }
+    private fun getMccmnc() {
+        val mccmnc = UserUtils.getMccmnc(this)
+        Log.d(TAG,"getMccmnc: $mccmnc")
+    }
+    private fun getCarrier() {
+       val carrier = UserUtils.getCarrier(this)
+        Log.d(TAG,"getCarrier: $carrier")
+    }
+    private fun getDisplayWidth() {
+       val displayWidth = getScreenWidthInDp(this)
+        Log.d(TAG,"getDisplayWidth: $displayWidth")
+    }
+    private fun getDisplayHeight() {
+        val displayHeight = getScreenHeightInDp(this)
+        Log.d(TAG,"getDisplayHeight: $displayHeight")
+    }
+    private fun getDisplayPxRatio() {
+       val displayPxRatio = getScreenDensity(this)
+        Log.d(TAG,"getDisplayPxRatio: $displayPxRatio")
+    }
+    private fun getDisplayPpi() {
+       val displayPpi = getScreenSize(this)
+        Log.d(TAG,"getDisplayPpi: $displayPpi")
+    }
+    private fun getOs() {
+        val os = UserUtils.getOs()
+        Log.d(TAG,"getOs: $os")
+    }
+    private fun getOsVersion() {
+       val osv = UserUtils.getOsVersion()
+        Log.d(TAG,"getOsVersion: $osv")
+    }
+    private fun getDeviceHardwareVersion() {
+       val deviceHardwareVersion = ""
+        Log.d(TAG,"getDeviceHardwareVersion: $deviceHardwareVersion")
+    }
+    private fun getDeviceMake() {
+        val deviceMake = getBrandName()
+        Log.d(TAG,"getDeviceMake: $deviceMake")
+    }
+    private fun getDeviceModel() {
+       val deviceModel = getModelName()
+        Log.d(TAG,"getDeviceModel: $deviceModel")
+    }
+    private fun getDeviceLanguage() {
+       val deviceLanguage = UserUtils.getDeviceLanguage()
+        Log.d(TAG,"getDeviceLanguage: $deviceLanguage")
+    }
+    private fun getAppBundle() {
+        val bundle = UserUtils.getAppBundle(this)
+        Log.d(TAG,"getAppBundle: $bundle")
+    }
+    private fun getAppVersion() {
+       val appVersion = UserUtils.getAppVersion(this)
+        Log.d(TAG,"getAppVersion: $appVersion")
+    }
+    private fun getAppName() {
+       val appName = UserUtils.getAppName(this)
+        Log.d(TAG,"getAppName: $appName")
     }
 }

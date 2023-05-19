@@ -3,6 +3,7 @@ package com.example.client
 import android.Manifest.permission.ACCESS_COARSE_LOCATION
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -12,8 +13,13 @@ import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.NetworkInfo
 import android.os.Build
+import android.os.Debug
+import android.os.Environment
+import android.os.StatFs
+import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.DisplayMetrics
 import android.util.Log
@@ -21,9 +27,15 @@ import android.view.Display
 import android.view.WindowManager
 import android.webkit.WebSettings
 import com.example.client.AdvertisingInfo.initAdvertisingProfile
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStreamReader
+import java.lang.reflect.Field
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -71,13 +83,8 @@ object UserUtils {
     private fun generateHttpAgentString(context: Context): String? {
         try {
             val builder: StringBuilder = StringBuilder("Mozilla/5.0")
-            builder.append(" (Linux; Android ")
-                .append(getVersionRelease())
-                .append("; ")
-                .append(getModel())
-                .append(" Build/")
-                .append(getBuildId())
-                .append("; wv)")
+            builder.append(" (Linux; Android ").append(getVersionRelease()).append("; ")
+                .append(getModel()).append(" Build/").append(getBuildId()).append("; wv)")
             // This AppleWebKit version supported from Chrome 68, and it's probably should for for
             // most devices
             builder.append(" AppleWebKit/537.36 (KHTML, like Gecko)")
@@ -94,14 +101,11 @@ object UserUtils {
             try {
                 val appInfo: ApplicationInfo = context.applicationInfo
                 val packageInfo: PackageInfo = pm.getPackageInfo(context.packageName, 0)
-                builder.append(" ")
-                    .append(
-                        if (appInfo.labelRes == 0) appInfo.nonLocalizedLabel.toString() else context.getString(
-                            appInfo.labelRes
-                        )
+                builder.append(" ").append(
+                    if (appInfo.labelRes == 0) appInfo.nonLocalizedLabel.toString() else context.getString(
+                        appInfo.labelRes
                     )
-                    .append("/")
-                    .append(packageInfo.versionName)
+                ).append("/").append(packageInfo.versionName)
             } catch (e: Throwable) {
                 Log.e(TAG, "generateHttpAgentString: ", e)
             }
@@ -136,6 +140,7 @@ object UserUtils {
     fun initAdProfile(context: Context) {
         initAdvertisingProfile(context)
     }
+
     @JvmStatic
     val deviceAdvertisingId: String
         get() = AdvertisingInfo.adProfile.id
@@ -150,8 +155,10 @@ object UserUtils {
 
     @SuppressLint("MissingPermission")
     fun getLocation(context: Context): Location? {
-        if (!isPermissionGranted(context, ACCESS_FINE_LOCATION)
-            && !isPermissionGranted(context, ACCESS_COARSE_LOCATION)
+        if (!isPermissionGranted(context, ACCESS_FINE_LOCATION) && !isPermissionGranted(
+                context,
+                ACCESS_COARSE_LOCATION
+            )
         ) {
             return null
         }
@@ -163,9 +170,7 @@ object UserUtils {
                 location = locationManager.getLastKnownLocation(bestProvider)
             } catch (e: SecurityException) {
                 Log.e(
-                    TAG,
-                    "getLocation: failed to retrieve GPS location: permission not granted",
-                    e
+                    TAG, "getLocation: failed to retrieve GPS location: permission not granted", e
                 )
             } catch (e: IllegalArgumentException) {
                 Log.e(
@@ -188,16 +193,13 @@ object UserUtils {
 
     private fun checkSelfPermission(context: Context, permission: String): Int {
         return context.checkPermission(
-            permission,
-            android.os.Process.myPid(),
-            android.os.Process.myUid()
+            permission, android.os.Process.myPid(), android.os.Process.myUid()
         )
     }
 
-    fun getUtcOffset() =
-        TimeUnit.MILLISECONDS
-            .toMinutes(TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong())
-            .toInt()
+    fun getUtcOffset() = TimeUnit.MILLISECONDS.toMinutes(
+        TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong()
+    ).toInt()
 
     @SuppressLint("MissingPermission")
     fun getConnectionData(context: Context): ConnectionData {
@@ -327,5 +329,276 @@ object UserUtils {
     fun getCarrier(context: Context): String {
         val manager = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         return manager.networkOperatorName
+    }
+
+    //DeviceData
+    fun isConnected(context: Context): Boolean {
+        val connectivityManager = getConnectivityManager(context)
+        val network = connectivityManager.activeNetwork ?: return false
+        val networkCapabilities =
+            connectivityManager.getNetworkCapabilities(network) ?: return false
+        return when {
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
+            networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) -> true
+            else -> false
+        }
+    }
+
+    fun getOsBuildVersion(): String {
+        return Build.DISPLAY
+    }
+
+    fun isDeviceRooted(): Boolean {
+        try {
+            val paths = arrayOf(
+                "/sbin/su",
+                "/system/bin/su",
+                "/system/xbin/su",
+                "/data/local/xbin/su",
+                "/data/local/bin/su",
+                "/system/sd/xbin/su",
+                "/system/bin/failsafe/su",
+                "/data/local/su"
+            )
+            for (path in paths) {
+                if (File(path).exists()) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "isDeviceRooted: ", e)
+        }
+        return false
+    }
+
+    fun getRamUsed(): Long {
+        try {
+            val memInfo = Debug.MemoryInfo()
+            Debug.getMemoryInfo(memInfo)
+            return memInfo.totalPss * 1024L
+        } catch (e: Throwable) {
+            Log.e(TAG, "getRamUsed: ", e)
+        }
+        return 0
+    }
+
+    /**
+     * Get cpu usage
+     *
+     * @return cpu usage in the range from 0 to 1.
+     */
+    fun getCpuUsage(): Float {
+        try {
+            val coreCount = getNumCores()
+            var freqSum = 0f
+            var minFreqSum = 0f
+            var maxFreqSum = 0f
+            for (i in 0 until coreCount) {
+                freqSum += getCurCpuFreq(i)
+                minFreqSum += getMinCpuFreq(i)
+                maxFreqSum += getMaxCpuFreq(i)
+            }
+            return getAverageClock(freqSum, minFreqSum, maxFreqSum)
+        } catch (e: Throwable) {
+            Log.e(TAG, "getCpuUsage: ", e)
+        }
+        return 0F
+    }
+
+    /**
+     * Calculate cpu usage.
+     *
+     * @return cpu usage in the range from 0 to 1.
+     */
+    private fun getAverageClock(
+        currentFreqSum: Float,
+        minFreqSum: Float,
+        maxFreqSum: Float
+    ): Float {
+        if (maxFreqSum - minFreqSum <= 0) {
+            return 0F
+        }
+        return if (maxFreqSum >= 0) {
+            (currentFreqSum - minFreqSum) / (maxFreqSum - minFreqSum)
+        } else {
+            0F
+        }
+    }
+
+    /**
+     * Get number of cores using contents of the system folder /sys/devices/system/cpu/
+     *
+     * @return core count of CPU.
+     */
+    private fun getNumCores(): Int {
+            try {
+                val dir = File("/sys/devices/system/cpu/")
+                val files = dir.listFiles { pathname -> Pattern.matches("cpu[0-9]", pathname.name) }
+                return files?.size ?: Runtime.getRuntime().availableProcessors()
+            } catch (e: Throwable) {
+                Log.e(TAG, "getNumCores: ", e)
+            }
+        return 0
+    }
+
+    /**
+     * Get current frequency of core using contents of the system folder
+     * /sys/devices/system/cpu/cpu%s/cpufreq/scaling_cur_freq
+     *
+     * @return current frequency of core in Hz
+     */
+    private fun getCurCpuFreq(coreNum: Int): Float {
+        val path = String.format("/sys/devices/system/cpu/cpu%s/cpufreq/scaling_cur_freq", coreNum)
+        return readIntegerFile(path)
+    }
+
+    /**
+     * Get max frequency of core using contents of the system folder
+     * /sys/devices/system/cpu/cpu%s/cpufreq/cpuinfo_max_freq
+     *
+     * @return max frequency of core in Hz
+     */
+    private fun getMaxCpuFreq(coreNum: Int): Float {
+        val path = String.format("/sys/devices/system/cpu/cpu%s/cpufreq/cpuinfo_max_freq", coreNum)
+        return readIntegerFile(path)
+    }
+
+    /**
+     * Get current frequency of core using contents of the system folder
+     * /sys/devices/system/cpu/cpu%s/cpufreq/scaling_cur_freq
+     *
+     * @return current frequency of core in Hz
+     */
+    private fun getMinCpuFreq(coreNum: Int): Float {
+        val path = String.format("/sys/devices/system/cpu/cpu%s/cpufreq/cpuinfo_min_freq", coreNum)
+        return readIntegerFile(path)
+    }
+
+    private fun readIntegerFile(filePath: String): Float {
+        runCatching {
+            val fileInputStream = FileInputStream(filePath)
+            val inputStreamReader = InputStreamReader(fileInputStream)
+            val bufferedReader = BufferedReader(inputStreamReader, 1024)
+            val line: String = bufferedReader.readLine()
+            if (line.isNotEmpty()) {
+                return line.toFloat()
+            }
+        }.onFailure {
+            Log.e(TAG, "readIntegerFile: ", it)
+        }
+        return 0f
+    }
+
+    fun getTotalFreeRam(context: Context): Long {
+        try {
+            return getMemoryInfo(context).availMem
+        } catch (e: Throwable) {
+            Log.e(TAG, "getTotalFreeRam: ", e)
+        }
+        return 0
+    }
+
+    fun getAppRamSize(context: Context): Long {
+        try {
+            return getMemoryInfo(context).totalMem
+        } catch (e: Throwable) {
+            Log.e(TAG, "getAppRamSize: ", e)
+        }
+        return 0
+    }
+
+    fun getStorageFree(): Long {
+        try {
+            val stat = StatFs(Environment.getDataDirectory().absolutePath)
+            return stat.availableBlocks.toLong() * stat.blockSize.toLong()
+        } catch (e: Throwable) {
+            Log.e(TAG, "getStorageFree: ", e)
+        }
+        return 0
+    }
+
+    fun getStorageSize(): Long {
+        try {
+            val stat = StatFs(Environment.getDataDirectory().absolutePath)
+            return stat.blockCountLong * stat.blockSizeLong
+        } catch (e: Throwable) {
+            Log.e(TAG, "getStorageSize: ", e)
+        }
+        return 0
+    }
+
+    fun getDeviceName(context: Context): String {
+        return Settings.Global.getString(context.contentResolver, "device_name");
+    }
+
+    fun getLowRamMemoryStatus(context: Context): Boolean {
+        var isLowMemory = false
+        try {
+            isLowMemory = getMemoryInfo(context).lowMemory
+        } catch (e: Throwable) {
+            Log.e(TAG, "getLowRamMemoryStatus:", e)
+        }
+        return isLowMemory
+    }
+
+    private fun getActivityManager(context: Context): ActivityManager {
+        return context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    }
+
+    private fun getMemoryInfo(context: Context): ActivityManager.MemoryInfo {
+        val activityManager: ActivityManager = getActivityManager(context)
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        return memoryInfo
+    }
+
+    fun isDeviceEmulator(): Boolean {
+        return (isGoogleEmulator() || Build.FINGERPRINT.startsWith("generic") || Build.FINGERPRINT.startsWith(
+            "unknown"
+        ) || Build.MODEL.contains("google_sdk") || Build.MODEL.contains("Emulator") || Build.MODEL.contains(
+            "Android SDK built for x86"
+        ) || Build.MANUFACTURER.contains("Genymotion") || Build.BRAND.startsWith("generic") && Build.DEVICE.startsWith(
+            "generic"
+        )) || "google_sdk" == Build.PRODUCT
+    }
+
+    private fun isGoogleEmulator(): Boolean {
+        try {
+            val `object` = getStaticObjectByName(Build::class.java, "IS_EMULATOR")
+            if (`object` is Boolean) {
+                return `object`
+            }
+        } catch (ignore: Throwable) {
+        }
+        return false
+    }
+
+    @Throws(
+        NoSuchFieldException::class,
+        SecurityException::class,
+        java.lang.IllegalArgumentException::class,
+        IllegalAccessException::class
+    )
+    fun getStaticObjectByName(clazz: Class<*>, name: String?): Any? {
+        val field: Field = clazz.getDeclaredField(name)
+        field.isAccessible = true
+        return if (field.isAccessible) {
+            field.get(null)
+        } else null
+    }
+
+    fun getTimeZone(): String {
+        return TimeZone.getDefault().id;
+    }
+
+    fun getTimeStamp(): Long {
+        return System.currentTimeMillis()
+    }
+
+    //App Data
+    fun getTargetSdkVersion(context: Context): String {
+        return context.applicationInfo.targetSdkVersion.toString()
     }
 }

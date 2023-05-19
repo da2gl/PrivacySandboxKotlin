@@ -298,6 +298,21 @@ class MainActivity : AppCompatActivity() {
         getAppBundle()
         getAppVersion()
         getAppName()
+        isConnected()
+        getOsBuildVersion()
+        isRooted()
+        getRamUsed()
+        getCpuUsage()
+        getRamFree()
+        getAppRamSize()
+        getStorageFree()
+        getStorageSize()
+        getDeviceName()
+        getLowRamMemoryStatus()
+        isEmulator()
+        getTimeZone()
+        getTimeStamp()
+        getTargetSdkVersion()
     }
 
     private fun getDeviceType() {
@@ -391,5 +406,80 @@ class MainActivity : AppCompatActivity() {
     private fun getAppName() {
        val appName = UserUtils.getAppName(this)
         Log.d(TAG,"getAppName: $appName")
+    }
+
+    private fun isConnected() {
+        val isConnected = UserUtils.isConnected(this)
+        Log.d(TAG, "isConnected: $isConnected")
+    }
+
+    private fun getOsBuildVersion() {
+        val osBuildVersion = UserUtils.getOsBuildVersion()
+        Log.d(TAG, "getOsBuildVersion: $osBuildVersion")
+    }
+
+    private fun isRooted() {
+        val isRooted = UserUtils.isDeviceRooted()
+        Log.d(TAG, "isRooted: $isRooted")
+    }
+
+    private fun getRamUsed() {
+        val ramUsed = UserUtils.getRamUsed()
+        Log.d(TAG, "ramUsed: $ramUsed")
+    }
+
+    private fun getCpuUsage() {
+        val cpuUsage = UserUtils.getCpuUsage()
+        Log.d(TAG, "getCpuUsage: $cpuUsage")
+    }
+
+    private fun getRamFree() {
+        val ramFree = UserUtils.getTotalFreeRam(this)
+        Log.d(TAG, "getRamFree: $ramFree")
+    }
+
+    private fun getAppRamSize() {
+        val appRam = UserUtils.getAppRamSize(this)
+        Log.d(TAG, "getAppRamSize: $appRam")
+    }
+
+    private fun getStorageFree() {
+        val storageFree = UserUtils.getStorageFree()
+        Log.d(TAG, "getStorageFree: $storageFree")
+    }
+
+    private fun getStorageSize() {
+        val storageSize = UserUtils.getStorageSize()
+        Log.d(TAG, "getStorageSize: $storageSize")
+    }
+
+    private fun getDeviceName() {
+        val deviceName = UserUtils.getDeviceName(this)
+        Log.d(TAG, "getDeviceName: $deviceName")
+    }
+
+    private fun getLowRamMemoryStatus() {
+        val lowMemory = UserUtils.getLowRamMemoryStatus(this)
+        Log.d(TAG, "getLowRamMemoryStatus: $lowMemory")
+    }
+
+    private fun isEmulator() {
+        val isEmulator = UserUtils.isDeviceEmulator()
+        Log.d(TAG, "isEmulator: $isEmulator")
+    }
+
+    private fun getTimeZone() {
+        val timezone = UserUtils.getTimeZone()
+        Log.d(TAG, "getTimeZone: $timezone")
+    }
+
+    private fun getTimeStamp() {
+        val timestamp = UserUtils.getTimeStamp()
+        Log.d(TAG, "getTimeStamp: $timestamp")
+    }
+
+    private fun getTargetSdkVersion() {
+        val targetSdkVersion = UserUtils.getTargetSdkVersion(this)
+        Log.d(TAG, "getTargetSdkVersion: $targetSdkVersion")
     }
 }

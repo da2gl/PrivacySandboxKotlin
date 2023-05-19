@@ -22,7 +22,6 @@ object AdvertisingInfo {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
     }
 
     class AdvertisingProfile {
